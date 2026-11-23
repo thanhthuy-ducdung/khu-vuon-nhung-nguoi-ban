@@ -7,7 +7,9 @@
 //   pose.wave   0..1  right arm from rest to raised (waving)
 //   pose.wob    radians, hand wobble while waving
 //   pose.blink  boolean
-//   pose.face   'smile' | 'happy' | 'sad' | 'wow'
+//   pose.face   'smile' | 'happy' | 'sad' | 'wow' | 'talk' (with pose.open 0..1)
+//   pose.armL / pose.armR  [name, k]: blend from rest to 'reach' | 'hold' | 'up' by k (overrides wave on that arm)
+//   pose.kickL / pose.kickR 0..1 foot swings out sideways;  pose.step  walking phase (feet lift alternately)
 import { PAL, shape, ink, ellipse, spline, rrect, move, reg, TAU } from './engine/toon.js';
 import { drawHand } from './engine/chars.js';
 
@@ -38,14 +40,33 @@ function arm(ctx, sh, el, ha, handA, col, paw, side, seed) {
   ink(ctx, move(P, o[0] * 0.6, o[1] * 0.6), 14, { seed: seed + 1, taper: false, wob: 0.05, color: col });
   drawHand(ctx, ha[0], ha[1], handA, 'open', side, 0.72, paw);
 }
+// arm targets relative to the rest pose, x mirrored by side
+const ARM = {
+  reach: { el: [72, 74], ha: [104, 112], a: 1.0 },   // down and out, hand at ball height beside the feet
+  hold:  { el: [70, 52], ha: [92, 62], a: 0.2 },      // forearm forward, ball carried in the hand
+  up:    { el: [86, -40], ha: [96, -112], a: -1.45 },  // hand above the head (toss / catch)
+};
+export function handPos(c, side, name, k = 1) {
+  const bw = c.bw || 1, top = c.kind === 'owl' ? -162 : -150, T = ARM[name];
+  const rest = [side * (18 + 50 * bw), top + 98], tgt = [side * (T.ha[0] + 50 * (bw - 1)), top + T.ha[1]];
+  return lerpP(rest, tgt, k);
+}
 function arms(ctx, c, pose, top, sd) {
   const bw = c.bw || 1, col = c.shirt || c.fur, paw = c.kind === 'owl' ? c.furL : c.fur;
   for (const side of [-1, 1]) {
     const w = side === 1 ? (pose.wave || 0) : 0;
     const sh = [side * 50 * bw, top + 14];
-    const el = lerpP([side * (14 + 50 * bw), top + 58], [side * (46 + 50 * bw), top - 22], w);
-    const ha = lerpP([side * (18 + 50 * bw), top + 98], [side * (56 + 50 * bw), top - 92], w);
-    const a = (1 - w) * (Math.PI / 2 - side * 0.12) + w * (-Math.PI / 2 + (pose.wob || 0));
+    let el = lerpP([side * (14 + 50 * bw), top + 58], [side * (46 + 50 * bw), top - 22], w);
+    let ha = lerpP([side * (18 + 50 * bw), top + 98], [side * (56 + 50 * bw), top - 92], w);
+    let a = (1 - w) * (Math.PI / 2 - side * 0.12) + w * (-Math.PI / 2 + (pose.wob || 0));
+    const ov = side === 1 ? pose.armR : pose.armL;
+    if (ov && ov[1] > 0) {
+      const T = ARM[ov[0]], k = ov[1], dx = 50 * (bw - 1);
+      el = lerpP([side * (14 + 50 * bw), top + 58], [side * (T.el[0] + dx), top + T.el[1]], k);
+      ha = lerpP([side * (18 + 50 * bw), top + 98], [side * (T.ha[0] + dx), top + T.ha[1]], k);
+      const ta = side === 1 ? T.a : Math.PI - T.a;
+      a = (1 - k) * (Math.PI / 2 - side * 0.12) + k * ta;
+    }
     arm(ctx, sh, el, ha, a, col, paw, side, sd + 300 + side * 7);
   }
 }
@@ -70,10 +91,16 @@ function brows(ctx, c, face, ex, ey) {
     ink(ctx, P, 4, { taper: true, color: col });
   }
 }
-function mouth(ctx, face, y) {
+function mouth(ctx, face, y, open = 0) {
   if (face === 'happy') {
     S(ctx, spline([[-16, y - 6], [16, y - 6], [11, y + 7], [0, y + 11], [-11, y + 7]], true, 6), { fill: PAL.ink, line: 0, grain: 0, off: [0, 0] });
     ctx.fillStyle = PINK; ctx.beginPath(); ctx.ellipse(0, y + 6, 7, 4, 0, 0, TAU); ctx.fill();
+  } else if (face === 'talk') {
+    const o = Math.max(0, Math.min(1, open));
+    if (o < 0.12) { ink(ctx, spline([[-14, y - 4], [0, y + 4], [14, y - 4]], false, 6), 4, { taper: true }); return; }
+    const h = 4 + o * 12;
+    S(ctx, spline([[-15, y - 5], [15, y - 5], [10, y - 5 + h * 0.8], [0, y - 5 + h], [-10, y - 5 + h * 0.8]], true, 6), { fill: PAL.ink, line: 0, grain: 0, off: [0, 0] });
+    if (o > 0.4) { ctx.fillStyle = PINK; ctx.beginPath(); ctx.ellipse(0, y - 5 + h * 0.75, 6, 3, 0, 0, TAU); ctx.fill(); }
   } else if (face === 'wow') {
     ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.ellipse(0, y + 2, 8, 11, 0, 0, TAU); ctx.fill();
   } else if (face === 'sad') {
@@ -109,7 +136,11 @@ export function drawCharacter(ctx, id, pose = {}) {
   if (k === 'bear') S(ctx, E(58, -44, 15, 15), { fill: c.fur, line: 3.5, seed: sd + 3 });
 
   // --- feet + body ---
-  for (const s of [-1, 1]) S(ctx, E(s * 30 * bw, -10, 30, 14), { fill: c.furD, line: 3.5, seed: sd + 10 + s });
+  for (const s of [-1, 1]) {
+    const kick = (s === 1 ? pose.kickR : pose.kickL) || 0;
+    const lift = pose.step !== undefined ? Math.max(0, Math.sin(pose.step * Math.PI * 2 + (s === 1 ? 0 : Math.PI))) * 10 : 0;
+    S(ctx, E(s * (30 * bw + kick * 34), -10 - kick * 16 - lift, 30, 14, -s * kick * 0.35), { fill: c.furD, line: 3.5, seed: sd + 10 + s });
+  }
   S(ctx, bodyPts, { fill: c.shirt || c.fur, line: 4.5, seed: sd + 12 });
   if (k === 'squirrel') S(ctx, E(0, -80, 36, 46), { fill: CREAM, line: 0, grain: 0.15, seed: sd + 13 });
   if (owl) {
@@ -202,7 +233,7 @@ export function drawCharacter(ctx, id, pose = {}) {
     for (const s of [-1, 1]) ink(ctx, E(s * 33, -234, 27, 27), 4, { closed: true, breaks: 0.1, seed: sd + 45 + s });
     ink(ctx, spline([[-8, -238], [0, -244], [8, -238]], false, 4), 3.5);
     S(ctx, face === 'wow' ? [[-11, -208], [11, -208], [8, -190], [0, -184], [-8, -190]] : [[-11, -208], [11, -208], [0, -184]], { fill: PAL.mustard, line: 3, seed: sd + 47 });
-  } else mouth(ctx, face, k === 'bear' ? -178 : mouthY);
+  } else mouth(ctx, face, k === 'bear' ? -178 : mouthY, pose.open || 0);
 
   if (k === 'squirrel') {
     S(ctx, [[0, -290], [-30, -312], [-28, -268]], { fill: c.bow, line: 3.5, seed: sd + 50 });
