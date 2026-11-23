@@ -8,7 +8,8 @@
 //   pose.wob    radians, hand wobble while waving
 //   pose.blink  boolean
 //   pose.face   'smile' | 'happy' | 'sad' | 'wow' | 'talk' (with pose.open 0..1)
-//   pose.armL / pose.armR  [name, k]: blend from rest to 'reach' | 'hold' | 'up' by k (overrides wave on that arm)
+//   pose.armL / pose.armR  [name, k]: blend from rest to 'reach' | 'hold' | 'up' | 'stretch' | 'side' | 'table' | 'tableFar' | 'eat' by k (overrides wave on that arm)
+//   pose.noScarf  hide the rabbit's scarf (when it flies away)
 //   pose.kickL / pose.kickR 0..1 foot swings out sideways;  pose.step  walking phase (feet lift alternately)
 import { PAL, shape, ink, ellipse, spline, rrect, move, reg, TAU } from './engine/toon.js';
 import { drawHand } from './engine/chars.js';
@@ -45,6 +46,11 @@ const ARM = {
   reach: { el: [72, 74], ha: [104, 112], a: 1.0 },   // down and out, hand at ball height beside the feet
   hold:  { el: [70, 52], ha: [92, 62], a: 0.2 },      // forearm forward, ball carried in the hand
   up:    { el: [86, -40], ha: [96, -112], a: -1.45 },  // hand above the head (toss / catch)
+  stretch: { el: [100, -64], ha: [118, -172], a: -1.45 }, // long reach straight up (higher than 'up')
+  side:  { el: [84, 30], ha: [126, 24], a: 0.05 },      // arm out to the side (holding a friend's hand)
+  table: { el: [76, 50], ha: [70, 22], a: 0.35 },       // hand resting on a table top in front
+  tableFar: { el: [96, 40], ha: [118, 20], a: 0.15 },   // reaching across the table
+  eat:   { el: [74, 26], ha: [38, -34], a: -2.2 },      // hand at the mouth (eating)
 };
 export function handPos(c, side, name, k = 1) {
   const bw = c.bw || 1, top = c.kind === 'owl' ? -162 : -150, T = ARM[name];
@@ -157,7 +163,7 @@ export function drawCharacter(ctx, id, pose = {}) {
     S(ctx, [[0, -110], [24, -123], [24, -97]], { fill: c.tie, line: 3, seed: sd + 17 });
     S(ctx, E(0, -110, 7, 7), { fill: PAL.coralD, line: 2.5, seed: sd + 18 });
   }
-  if (k === 'rabbit') {
+  if (k === 'rabbit' && !pose.noScarf) {
     S(ctx, rrect(-58, -164, 116, 30, 13), { fill: c.scarf, line: 4, seed: sd + 16 });
     S(ctx, [[20, -140], [46, -140], [54, -88], [30, -92]], { fill: c.scarf, line: 3.5, seed: sd + 17 });
   }
